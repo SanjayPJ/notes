@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+
+    <!-- Bootstrap CSS -->
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css"
+      integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh"
+      crossorigin="anonymous"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/vue"></script>
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css"
+    />
+
+    <title>Notes</title>
+    <style>
+      .flex-container {
+        display: flex;
+        align-items: stretch;
+        height: 96.5vh;
+      }
+
+      .flex-container > div {
+        width: 100px;
+        height: 100%;
+      }
+      * {
+        font-size: 14px;
+        border-radius: 0 !important;
+      }
+
+      .active {
+        background-color: rgba(11, 148, 211, 0.1) !important;
+        color: black !important;
+        border: 1px solid grey !important;
+      }
+
+      ::selection {
+        background: rgba(11, 148, 211, 0.2);
+      }
+
+      textarea {
+        font-family: "Times New Roman";
+        font-size: 17px !important;
+        background-color: whitesmoke !important;
+      }
+
+      .list-group-item:hover {
+        cursor: default;
+      }
+      .form-control:focus {
+        outline: none !important;
+        box-shadow: none !important;
+        border-color: #ced4da;
+      }
+      ::-webkit-scrollbar {
+        width: 5px;
+      }
+
+      /* Track */
+      ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+      }
+
+      /* Handle */
+      ::-webkit-scrollbar-thumb {
+        background: rgba(136, 136, 136, 0.5);
+      }
+
+      /* Handle on hover */
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+      }
+      body {
+        -webkit-touch-callout: none; /* iOS Safari */
+        -webkit-user-select: none; /* Safari */
+        -khtml-user-select: none; /* Konqueror HTML */
+        -moz-user-select: none; /* Old versions of Firefox */
+        -ms-user-select: none; /* Internet Explorer/Edge */
+        user-select: none; /* Non-prefixed version, currently
+                                  supported by Chrome, Opera and Firefox */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="flex-container pt-2 overflow-hidden">
+        <div style="flex-basis:380px;">
+          <form role="search" class="pl-2 mb-2">
+            <input
+              @keydown="doSearch()"
+              type="search"
+              v-model="search"
+              class="form-control"
+              placeholder="Search..."
+            />
+          </form>
+          <ul
+            class="list-group ml-2 border"
+            style="height: calc(100% - 48px); overflow-y: scroll;"
+            id="heading-group"
+          >
+            <li
+              class="list-group-item list-group-item-action"
+              v-for="item in notes"
+              :key="item.id"
+              :class="item.id == currentItem.id ? 'active': ''"
+              @click="setCurrentItem(item.id)"
+            >
+              {{item.content ? item.content.split('\n')[0]: 'New Note'}}
+            </li>
+          </ul>
+        </div>
+        <div style="flex-grow: 1;" class="px-2">
+          <div class="form-group h-100 pb-2">
+            <textarea
+              class="form-control p-4 h-100"
+              id="content"
+              @keydown="updateContent()"
+              v-model="currentItem.content"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="bg-light py-1 px-2">
+        <small>{{status}}</small>
+      </div>
+    </div>
+    <script
+      src="https://code.jquery.com/jquery-3.4.1.slim.min.js"
+      integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      var mysql = require("mysql");
+      var currentWindow = require("electron").remote.getCurrentWindow();
+      var timeoutId;
+
+      const ipc = require("electron").ipcRenderer;
+
+      function getCurrentTimeDate() {
+        var today = new Date();
+        var date =
+          today.getFullYear() +
+          "-" +
+          (today.getMonth() + 1) +
+          "-" +
+          today.getDate();
+        var time =
+          today.getHours() +
+          ":" +
+          today.getMinutes() +
+          ":" +
+          today.getSeconds();
+        return date + " " + time;
+      }
+
+      var now;
+
+      var con = mysql.createConnection({
+        host: "localhost",
+        user: "root",
+        password: null,
+        database: "notes"
+      });
+
+      new Vue({
+        el: "#app",
+        data: { notes: [], currentItem: {}, status: "", search: "" },
+        mounted() {
+          this.status =
+            getCurrentTimeDate() + " : Database connection established.";
+          let sql = "SELECT * FROM notes";
+
+          con.query(sql, (err, result, fields) => {
+            if (err) throw err;
+            this.notes = result;
+            this.currentItem = this.notes[0];
+          });
+          ipc.on("add", () => {
+            let sql = "INSERT INTO notes (content) VALUES ('');";
+            con.query(sql, (err, result, fields) => {
+              if (err) throw err;
+              this.loadItems();
+              this.status = getCurrentTimeDate() + " : New note added.";
+            });
+          });
+          ipc.on("delete", () => {
+            let sql = `DELETE FROM notes WHERE id=${this.currentItem.id};`;
+            con.query(sql, (err, result, fields) => {
+              if (err) throw err;
+              this.loadItems();
+              this.status = getCurrentTimeDate() + " : Current note deleted.";
+            });
+          });
+        },
+        methods: {
+          loadItems() {
+            let sql = "SELECT * FROM notes";
+
+            con.query(sql, (err, result, fields) => {
+              if (err) throw err;
+              this.notes = result;
+            });
+          },
+          doSearch() {
+            let sql = "SELECT * FROM notes";
+
+            con.query(sql, (err, result, fields) => {
+              if (err) throw err;
+              var filtered = result.filter(note => {
+                if (
+                  note.content
+                    .split("\n")[0]
+                    .toUpperCase()
+                    .indexOf(this.search.toUpperCase()) > -1
+                ) {
+                  return note;
+                }
+              });
+              this.notes = filtered;
+            });
+          },
+          setCurrentItem(itemNo) {
+            this.notes.forEach(note => {
+              if (note.id == itemNo) {
+                this.currentItem = note;
+              }
+            });
+          },
+          updateContent() {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+              var updatedContent = this.currentItem.content;
+              var currentItemId = this.currentItem.id;
+              let sql = `UPDATE notes SET content=${con.escape(
+                updatedContent
+              )} WHERE id=${currentItemId};`;
+              con.query(sql, (err, result, fields) => {
+                if (err) throw err;
+                this.status =
+                  getCurrentTimeDate() + " : Content updated successfully.";
+              });
+            }, 300);
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
